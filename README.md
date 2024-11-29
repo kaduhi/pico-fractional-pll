@@ -105,6 +105,8 @@ int main(void) {
 And this is a simple *frequency sweeper* example:
 
 ```
+#include "pico_fractional_pll.h"
+
 void main(void) {
   set_sys_clock_48mhz();
 
@@ -128,7 +130,7 @@ void main(void) {
 
 ## Example Use Case
 
-I have ported the [USB Sound Card](https://github.com/raspberrypi/pico-playground/tree/master/apps/usb_sound_card) demo from Raspberry Pi for this library, so anyone can use a Raspberry Pi Pico board as a **FM wireless transmitter** without modifying the board! After flashing the usb_sound_card_fm_transmitter.uf2 file to your Raspberry Pico board, select **Pico Examples Sound Card** as your audio output device, then play some audio and just tune your FM radio in **87.9MHz**. "Well, I no longer own any AM/FM radio, so this example is useless!" really? check your car!
+I have ported the [USB Sound Card](https://github.com/raspberrypi/pico-playground/tree/master/apps/usb_sound_card) demo from Raspberry Pi for this library, so anyone can use a Raspberry Pi Pico board as a **FM wireless transmitter** without modifying the board! After flashing the usb_sound_card_fm_transmitter.uf2 file to your Raspberry Pico board, select **Pico Examples Sound Card** as your audio output device, then play some audio and just tune your FM radio in **87.9MHz**. You may need to attach a short (less than 10cm) wire (but DO NOT attach a long wire, it may be illegal) at **GPIO21 pin**, otherwise you need to put a FM radio really close. "Well, I no longer own any AM/FM radio, so this example is useless!" really? check your car!
 
 You should be able to build and download the demo by following steps (for linux or mac) below.
 
