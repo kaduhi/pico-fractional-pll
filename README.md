@@ -117,13 +117,18 @@ void main(void) {
     // therefore, the pico_fractional_pll cannot work!
     return;
   }
+  pico_fractional_pll_enable_output(true);
 
   // sweep the 15kHz range for 15 seconds
   for (uint32_t freq = freq_low; freq <= freq_high; freq++) {
     pico_fractional_pll_set_freq_u32(freq);
+    // pico_fractional_pll_set_freq_28p4(freq << 4); // in fixed point, 28bit integral + 4bit fractional
+    // pico_fractional_pll_set_freq_f((float)freq); // in float
+    // pico_fractional_pll_set_freq_d((double)freq); // in double
     sleep_ms(1);
   }
 
+  pico_fractional_pll_enable_output(false);
   pico_fractional_pll_deinit();
 }
 ```
