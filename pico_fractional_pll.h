@@ -18,9 +18,12 @@ typedef struct pico_fractional_pll_instance_t {
   uint32_t fbdiv_low;
 
   uint gpio;
+  uint gpclk;
+  uint srcclk;
+  enum gpio_drive_strength drive_strength;
+  enum gpio_slew_rate slew_rate;
   uint32_t freq_low;
   uint32_t freq_high;
-  uint32_t fbdiv_low_minus_1;
   uint32_t fbdiv_high;
   uint32_t div;
   uint32_t postdiv1;
@@ -32,6 +35,12 @@ typedef struct pico_fractional_pll_instance_t {
 int pico_fractional_pll_init(PLL pll, uint gpio, uint32_t freq_range_min, uint32_t freq_range_max, enum gpio_drive_strength drive_strength, enum gpio_slew_rate slew_rate);
 
 int pico_fractional_pll_deinit(void);
+
+void pico_fractional_pll_enable_output(bool enable);
+
+void pico_fractional_pll_set_drive_strength(enum gpio_drive_strength drive_strength);
+
+void pico_fractional_pll_set_slew_rate(enum gpio_slew_rate slew_rate);
 
 void pico_fractional_pll_set_freq_u32(uint32_t freq);
 

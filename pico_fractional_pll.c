@@ -16,12 +16,11 @@
 #include "hardware/exception.h"
 #include "hardware/structs/systick.h"
 
-#define ALARM_NUM   0
-#define ALARM_IRQ   TIMER_IRQ_0
+#define ALARM_NUM   2
+#define ALARM_IRQ   TIMER_IRQ_2
 
 extern uint32_t ram_vector_table[48];
-uint32_t __attribute__((section(".ram_vector_table"))) ram_vector_table_pad[16];
-uint32_t __attribute__((section(".ram_vector_table"))) ram_vector_table2[48];
+uint32_t __attribute__((aligned(256))) ram_vector_table2[48];
 
 static const uint32_t xo_freq = 12000000;
 
@@ -43,8 +42,11 @@ enum core1_state_t {
   core1_state_stopping = 8, // do not change this, used in assembly code
   core1_state_stopped,
 };
+// this needs to be uint32_t, because accessing in assembly code
 static volatile uint32_t s_core1_state = core1_state_not_started;
 
+
+extern void __unhandled_user_irq(void);
 
 static bool is_div_possible(uint32_t vco_freq, uint32_t div, uint32_t *o_postdiv1, uint32_t *o_postdiv2, uint32_t *o_clkdiv);
 static bool calculate_pll_divider(pico_fractional_pll_instance_t *instance, uint32_t freq_range_min, uint32_t freq_range_max);
@@ -55,19 +57,18 @@ static void launch_core1(void);
 
 int pico_fractional_pll_init(PLL pll, uint gpio, uint32_t freq_range_min, uint32_t freq_range_max, enum gpio_drive_strength drive_strength, enum gpio_slew_rate slew_rate)
 {
+  if (s_core1_state != core1_state_not_started) {
+    return 0;
+  }
+
   pico_fractional_pll_instance.pll = pll;
   pico_fractional_pll_instance.gpio = gpio;
+  pico_fractional_pll_instance.drive_strength = drive_strength;
+  pico_fractional_pll_instance.slew_rate = slew_rate;
 
   if (calculate_pll_divider(&pico_fractional_pll_instance, freq_range_min, freq_range_max) == false) {
     return -1;
   }
-  pico_fractional_pll_instance.fbdiv_low_minus_1 = pico_fractional_pll_instance.fbdiv_low - 1;
-
-  pll_init(pll, 1, (xo_freq * pico_fractional_pll_instance.fbdiv_low), pico_fractional_pll_instance.postdiv1, pico_fractional_pll_instance.postdiv2);
-
-  launch_core1();
-
-  s_core1_state = core1_state_running;
 
   uint gpclk;
   uint src;
@@ -87,26 +88,85 @@ int pico_fractional_pll_init(PLL pll, uint gpio, uint32_t freq_range_min, uint32
     gpclk = clk_gpout3;
     src = (pll == pll_sys) ? CLOCKS_CLK_GPOUT3_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS : CLOCKS_CLK_GPOUT3_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB;
   }
-  clock_gpio_init(gpio, src, (float)pico_fractional_pll_instance.clkdiv);
-  clocks_hw->clk[gpclk].ctrl |= CLOCKS_CLK_GPOUT0_CTRL_DC50_BITS;
+  else {
+    return -2;
+  }
+  pico_fractional_pll_instance.gpclk = gpclk;
+  pico_fractional_pll_instance.srcclk = src;
 
-  gpio_set_drive_strength(gpio, drive_strength);
-  gpio_set_slew_rate(gpio, slew_rate);
+  // initially the output is disabled
+  pico_fractional_pll_enable_output(false);
+
+  pico_fractional_pll_instance.acc_increment = 0x80000000;
+  pll_init(pll, 1, (xo_freq * pico_fractional_pll_instance.fbdiv_low), pico_fractional_pll_instance.postdiv1, pico_fractional_pll_instance.postdiv2);
+
+  launch_core1();
+
+  s_core1_state = core1_state_running;
 
   return 0;
 }
 
 int pico_fractional_pll_deinit(void)
 {
+  if (s_core1_state == core1_state_not_started) {
+    return 0;
+  }
+
+  pico_fractional_pll_enable_output(false);
+
+  pll_deinit(pico_fractional_pll_instance.pll);
+
   s_core1_state = core1_state_stopping;
   while (s_core1_state == core1_state_stopping) { }
   multicore_reset_core1();
 
-  gpio_set_function(pico_fractional_pll_instance.gpio, GPIO_FUNC_NULL);
-  gpio_set_dir(pico_fractional_pll_instance.gpio, GPIO_IN);
-  gpio_set_pulls(pico_fractional_pll_instance.gpio, false, false);
+  s_core1_state = core1_state_not_started;
 
-  pll_deinit(pico_fractional_pll_instance.pll);
+  return 0;
+}
+
+void pico_fractional_pll_enable_output(bool enable)
+{
+  if (s_core1_state == core1_state_not_started) {
+    return;
+  }
+
+  if (enable) {
+    clock_gpio_init_int_frac(pico_fractional_pll_instance.gpio, pico_fractional_pll_instance.srcclk, pico_fractional_pll_instance.clkdiv, 0);
+    if (pico_fractional_pll_instance.clkdiv & 1) {
+      // enable duty cycle correction for odd divisor
+      clocks_hw->clk[pico_fractional_pll_instance.gpclk].ctrl |= CLOCKS_CLK_GPOUT0_CTRL_DC50_BITS;
+    }
+    else {
+      clocks_hw->clk[pico_fractional_pll_instance.gpclk].ctrl &= ~CLOCKS_CLK_GPOUT0_CTRL_DC50_BITS;
+    }
+    gpio_set_drive_strength(pico_fractional_pll_instance.gpio, pico_fractional_pll_instance.drive_strength);
+    gpio_set_slew_rate(pico_fractional_pll_instance.gpio, pico_fractional_pll_instance.slew_rate);
+  }
+  else {
+    gpio_set_function(pico_fractional_pll_instance.gpio, GPIO_FUNC_NULL);
+    gpio_set_dir(pico_fractional_pll_instance.gpio, GPIO_IN);
+    gpio_set_pulls(pico_fractional_pll_instance.gpio, false, false);
+  }
+}
+
+void pico_fractional_pll_set_drive_strength(enum gpio_drive_strength drive_strength)
+{
+  pico_fractional_pll_instance.drive_strength = drive_strength;
+  if (s_core1_state == core1_state_not_started) {
+    return;
+  }
+  gpio_set_drive_strength(pico_fractional_pll_instance.gpio, pico_fractional_pll_instance.drive_strength);
+}
+
+void pico_fractional_pll_set_slew_rate(enum gpio_slew_rate slew_rate)
+{
+  pico_fractional_pll_instance.slew_rate = slew_rate;
+  if (s_core1_state == core1_state_not_started) {
+    return;
+  }
+  gpio_set_slew_rate(pico_fractional_pll_instance.gpio, pico_fractional_pll_instance.slew_rate);
 }
 
 void pico_fractional_pll_set_freq_u32(uint32_t freq)
@@ -268,7 +328,7 @@ static bool calculate_pll_divider(pico_fractional_pll_instance_t *instance, uint
 
 void core1_systick_callback(void);
 
-static inline void fractional_pll_core_logic(void)
+static inline void __not_in_flash_func(fractional_pll_core_logic)(void)
 {
   // r0: temp
   // r1: #0
@@ -329,13 +389,20 @@ static inline void fractional_pll_core_logic(void)
   ");
 }
 
-static void timer_alarm_callback(void)
+static void __not_in_flash_func(timer_alarm_callback)(void)
 {
   timer_hw->intr = (1u << ALARM_NUM);
 }
 
-static void core1_main(void)
+static void __not_in_flash_func(core1_main)(void)
 {
+  // disable all interrupts
+  for (int i = 0; i < 48; i++) {
+    if (i >= VTABLE_FIRST_IRQ) {
+      irq_set_enabled(i - VTABLE_FIRST_IRQ, false);
+    }
+  }
+
   // set the code1 dedicated vector table
   scb_hw->vtor = (uintptr_t)ram_vector_table2;
 
@@ -394,6 +461,12 @@ static void launch_core1(void)
     init_done = true;
     // copy the vector table
     __builtin_memcpy(ram_vector_table2, ram_vector_table, sizeof(ram_vector_table2));
+    // clear the table
+    for (int i = 0; i < 48; i++) {
+      if (i >= VTABLE_FIRST_IRQ) {
+        ram_vector_table2[i] = (uint32_t)__unhandled_user_irq;
+      }
+    }
   }
 
   s_core1_state = core1_state_not_started;
