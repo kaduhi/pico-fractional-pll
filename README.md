@@ -1,6 +1,12 @@
 # pico-fractional-pll library
 Make the RP2040 internal PLL a real "fractional" PLL (or, maybe more like "Pseudo Fractional" PLL)
 
+**WARNING: DO NOT attach any antenna wire on the RF frequency output GPIO port (e.g. GPIO 21, 23, 24 or 25)!! It's most likely illegal in your country!!**
+
+If you are an amateur radio operator, you may be able to change the frequency to some amateur radio band, then put a LPF (Low Pass Filter) and an antenna wire. Still, you need to make sure the suprious level is lower than the rules in your country before transmitting any RF signal with an antenna.
+
+See this post from a Rapsberry Pi Engineer (a moderator of the forum): [https://forums.raspberrypi.com/viewtopic.php?p=2273045#p2273045](https://forums.raspberrypi.com/viewtopic.php?p=2273045#p2273045)
+
 ## Background
 We all know the RP2040 has two PLLs, and they only have an integer feedback divider so only specific frequencies can be generated. This means, you cannot use the PLL to generate radio signals meaningfully. Well, you are still able to generate Morse Code (by turning PLL on and off, it is still a digital signal), but you cannot tune the frequency of the RF signal.
 
@@ -83,7 +89,7 @@ This library still has some limitations:
 - PDM frequency is 1MHz (toggling the two fbdiv_int values for 1,000,000 times per second)
 - Should be able to generate any frequency up to around 160MHz
   - I have tried to generate APRS signal on 440MHz, no signals came out...
-- Uses the TIMER ALARM0 (can be changed to other alarm number)
+- Uses the TIMER ALARM2 (can be changed to other alarm number, the macro *ALARM_NUM* and *ALARM_IRQ* are defined in pico_fractional_pll.c)
 - Uses the Cortex-M0+ tick counter with exception
 
 ## How to use this library
@@ -91,6 +97,7 @@ This library still has some limitations:
 - Make sure the clk_sys is 48MHz
 - Make sure the pll_sys is unused
 - Make sure the Core1 is unused
+- Make sure the ALARM2 is unused
 
 The beginning of your main function should looks like:
 
@@ -135,7 +142,13 @@ void main(void) {
 
 ## Example Use Case
 
-I have ported the [USB Sound Card](https://github.com/raspberrypi/pico-playground/tree/master/apps/usb_sound_card) demo from Raspberry Pi for this library, so anyone can use a Raspberry Pi Pico board as a **FM wireless transmitter** without modifying the board! After flashing the usb_sound_card_fm_transmitter.uf2 file to your Raspberry Pico board, select **Pico Examples Sound Card** as your audio output device, then play some audio and just tune your FM radio in **87.9MHz**. You may need to attach a short (less than 10cm) wire (but DO NOT attach a long wire, it may be illegal) at **GPIO21 pin**, otherwise you need to put a FM radio really close. "Well, I no longer own any AM/FM radio, so this example is useless!" really? check your car!
+**WARNING: DO NOT attach any antenna wire on the RF frequency output GPIO port (e.g. GPIO 21, 23, 24 or 25)!! It's most likely illegal in your country!!**
+
+If you are an amateur radio operator, you may be able to change the frequency to some amateur radio band, then put a LPF (Low Pass Filter) and an antenna wire. Still, you need to make sure the suprious level is lower than the rules in your country before transmitting any RF signal with an antenna.
+
+See this post from a Rapsberry Pi Engineer (a moderator of the forum): [https://forums.raspberrypi.com/viewtopic.php?p=2273045#p2273045](https://forums.raspberrypi.com/viewtopic.php?p=2273045#p2273045)
+
+I have ported the [USB Sound Card](https://github.com/raspberrypi/pico-playground/tree/master/apps/usb_sound_card) demo from Raspberry Pi for this library, so anyone can use a Raspberry Pi Pico board as a **FM wireless transmitter** without modifying the board! After flashing the usb_sound_card_fm_transmitter.uf2 file to your Raspberry Pico board, select **Pico Examples Sound Card** as your audio output device, then play some audio and just tune your FM radio in **87.9MHz**. You need to put a FM radio really close because the RF output from the GPIO will not reach too far without an antenna. "Well, I no longer own any AM/FM radio, so this example is useless!" really? check your car!
 
 You should be able to build and download the demo by following steps (for linux or mac) below.
 
